@@ -4,30 +4,29 @@ uvicorn[standard]==0.32.1
 
 # ── Database ─────────────────────────────────────────────────────
 sqlalchemy==2.0.36
-greenlet==3.1.1
-asyncpg==0.30.0           # async PostgreSQL driver
-alembic==1.14.0           # database migrations
+greenlet>=3.2.2
+asyncpg==0.30.0
+alembic==1.14.0
 
 # ── Redis ────────────────────────────────────────────────────────
 redis==5.2.1
 
 # ── Auth / Security ──────────────────────────────────────────────
-bcrypt==4.2.1
+bcrypt>=4.3.0
 python-jose[cryptography]==3.3.0
 
 # ── Config ───────────────────────────────────────────────────────
 pydantic==2.10.3
-pydantic-settings==2.6.1
+pydantic-settings>=2.10.1
 email-validator==2.2.0
 
 # ── AI ───────────────────────────────────────────────────────────
-openai==1.57.4
+openai>=2.26.0
 
 # ── HTTP / Utilities ─────────────────────────────────────────────
 httpx==0.28.1
-python-multipart==0.0.12  # file upload support
+python-multipart==0.0.12
 
 # ── Dev / Testing ────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0
-httpx==0.28.1             # for TestClient
