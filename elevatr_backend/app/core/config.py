@@ -1,52 +1,58 @@
 """
 Elevatr – Centralised configuration via pydantic-settings.
-All values are read from environment variables or .env file.
 """
 
+import os
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
-    # ── Meta ────────────────────────────────────────────────────
+    # ── Meta ─────────────────────────────
     PROJECT_NAME: str = "Elevatr API"
     VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "development"   # development | production
+    ENVIRONMENT: str = "production"
     API_V1_PREFIX: str = "/api/v1"
-    DEBUG: bool = True
+    DEBUG: bool = False
+    PORT: int = 8000
 
-    # ── Database ────────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/elevatr"
+    # ── Database (IMPORTANT FIX) ─────────
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
-    # ── Redis ───────────────────────────────────────────────────
+    @property
+    def ASYNC_DATABASE_URL(self) -> str:
+        if not self.DATABASE_URL:
+            raise ValueError("DATABASE_URL is not set")
+
+        return self.DATABASE_URL.replace(
+            "postgresql://", "postgresql+asyncpg://"
+        )
+
+    # ── Redis ────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
     CACHE_TTL: int = 300           # seconds – default cache TTL
     RATE_LIMIT_REQUESTS: int = 60  # requests per minute per IP
-
-    # ── Auth / JWT ───────────────────────────────────────────────
-    JWT_SECRET: str = "CHANGE_ME_IN_PRODUCTION_32_CHARS_MIN"
+    # ── Auth ─────────────────────────────
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "change_this")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7   # 7 days
 
-    # ── OpenAI ──────────────────────────────────────────────────
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENAI_MAX_TOKENS: int = 2048
-    OPENAI_TEMPERATURE: float = 0.7
+    # ── OpenAI ───────────────────────────
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
-    # ── CORS ────────────────────────────────────────────────────
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:5173",   # Vite dev server
-        "http://localhost:3000",
-        "http://localhost:5566",
-        "http://127.0.0.1:5173",
-    ]
-    ALLOWED_HOSTS: List[str] = ["*"]
+    # ── CORS ─────────────────────────────
+    CORS_ORIGINS: List[str] = ["*"]
 
-    # ── Limits ──────────────────────────────────────────────────
-    MAX_RESUME_SIZE_CHARS: int = 50_000
+    # ── Limits ───────────────────────────
+    MAX_RESUME_SIZE_CHARS: int = 50000
 
 
 settings = Settings()
+

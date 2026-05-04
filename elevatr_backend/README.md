@@ -386,8 +386,13 @@ alembic history
 
 ## Frontend Integration
 
-The frontend already calls `http://localhost:5566/api/auth/...` (the old Node server).
-To point it to this FastAPI backend, update the fetch URLs in the React components:
+The `resume-builder` app uses `VITE_API_URL` (default `http://localhost:8000/api/v1`) for FastAPI.  
+The legacy Express server under `resume-builder/server` has been **removed**; ATS quick analysis on the public “Resume Analysis” page runs in the browser (`ATSAnalyzer` + PDF text via `pdfjs-dist`). For authenticated AI ATS scoring against a job description, call FastAPI:
+
+| Legacy (removed Node on :5000) | FastAPI |
+|----------------------------------|-----------|
+| `http://localhost:5000/api/ats/analyze` | Browser: `ATSAnalyzer` + optional `POST /api/v1/resume/ats-score` (JWT + JSON body) |
+| `http://localhost:5566/api/auth/...` | `http://localhost:8000/api/v1/auth/...` |
 
 | Old (Node.js) | New (FastAPI) |
 |---------------|---------------|

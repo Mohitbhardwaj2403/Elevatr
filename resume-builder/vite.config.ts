@@ -1,19 +1,18 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
+import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    // Full lucide prebundle is very slow; load icons on demand in dev.
+    // Icons load on-demand; excluding avoids a giant pre-bundle on first dev start.
     exclude: ['lucide-react'],
   },
   server: {
     port: 5199,
-    // Listen on all interfaces so Safari can use http://127.0.0.1:5199 or http://localhost:5199 reliably.
     host: true,
-    // Exit if 5199 is busy instead of hopping ports (avoids opening the wrong URL + dep-scan races).
-    strictPort: true,
+    // If 5199 is in use, use the next free port instead of hanging.
+    strictPort: false,
     open: false,
   },
   clearScreen: false,

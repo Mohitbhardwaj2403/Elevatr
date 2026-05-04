@@ -1,0 +1,8 @@
+{
+  "name": "elevatr-backend",
+  "private": true,
+  "description": "FastAPI backend — use Python venv with requirements.txt; npm is only a convenience alias.",
+  "scripts": {
+    "dev": "sh -c 'if [ -x .venv/bin/python ]; then exec .venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000; else exec python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000; fi'"
+  }
+}

@@ -4,8 +4,8 @@
     "version": "0.0.0",
     "type": "module",
     "scripts": {
-        "dev:free": "sh -c 'for pid in $(lsof -ti :5199 2>/dev/null); do kill -9 \"$pid\" 2>/dev/null; done; true'",
-        "dev": "npm run dev:free && printf '\\n  → Wait until you see \"Local:\" below, then open http://127.0.0.1:5199/ in Safari (not before — or Safari shows \"cannot connect\").\\n\\n' && vite",
+        "dev:free-port": "sh -c 'for pid in $(lsof -ti :5199 2>/dev/null); do kill \"$pid\" 2>/dev/null; done; true'",
+        "dev": "vite",
         "build": "vite build",
         "lint": "eslint .",
         "preview": "vite preview"
@@ -31,7 +31,7 @@
         "@types/jspdf": "^1.3.3",
         "@types/react": "^18.3.5",
         "@types/react-dom": "^18.3.0",
-        "@vitejs/plugin-react-swc": "^4.3.0",
+        "@vitejs/plugin-react": "^6.0.1",
         "autoprefixer": "^10.4.21",
         "eslint": "^9.9.1",
         "eslint-plugin-react-hooks": "^5.1.0-rc.0",

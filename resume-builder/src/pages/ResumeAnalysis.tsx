@@ -1,6 +1,8 @@
 import React, { useState, useRef } from "react";
 import { Upload, FileText, TrendingUp, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ATSAnalyzer } from "../utils/atsAnalyzer";
+import { extractResumeText } from "../utils/extractResumeText";
 
 const ResumeAnalysis: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -19,20 +21,35 @@ const ResumeAnalysis: React.FC = () => {
     if (!file) return;
     setLoading(true);
 
-    const formData = new FormData();
-    formData.append("resume", file);
-
     try {
-      const res = await fetch("http://localhost:5000/api/ats/analyze", {
-        method: "POST",
-        body: formData,
-      });
+      const text = await extractResumeText(file);
+      if (text.length < 80) {
+        alert(
+          "Could not read enough text from this file. Try a different PDF, or save your resume as .txt.",
+        );
+        setLoading(false);
+        return;
+      }
 
-      const data = await res.json();
-      setResult(data);
+      const analysis = new ATSAnalyzer(text).analyze();
+      const score = analysis.score;
+      const message =
+        score >= 80
+          ? "Excellent resume! Minor improvements recommended."
+          : score >= 60
+            ? "Good resume but needs some refinements."
+            : "Resume needs major improvements for ATS.";
+
+      setResult({
+        score,
+        strengths: analysis.strengths,
+        improvements: analysis.improvements,
+        keywords: analysis.keywords,
+        message,
+      });
     } catch (err) {
       console.error(err);
-      alert("Error analyzing resume");
+      alert(err instanceof Error ? err.message : "Error analyzing resume");
     }
 
     setLoading(false);
@@ -63,13 +80,13 @@ const ResumeAnalysis: React.FC = () => {
           onClick={() => inputRef.current?.click()}
         >
           <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-700">Click to upload your resume (PDF/DOCX)</p>
+          <p className="text-gray-700">Click to upload your resume (PDF or plain text)</p>
 
           <input
             type="file"
             ref={inputRef}
             className="hidden"
-            accept=".pdf,.doc,.docx"
+            accept=".pdf,.txt"
             onChange={handleUpload}
           />
         </div>
