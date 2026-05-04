@@ -33,14 +33,19 @@ class Base(DeclarativeBase):
     pass
 
 
-async def create_tables() -> None:
+async def create_tables():
     """Create all tables on startup (idempotent via checkfirst)."""
-    # Import models so they register with Base.metadata
-    from app.models import user, resume, job_application, interview_session, ai_conversation  # noqa: F401
+    try:
+        from app.models import user, resume, job_application, interview_session, ai_conversation  # noqa: F401
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables synchronised.")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        logger.info("Database tables synchronised.")
+
+    except Exception as e:
+        logger.error(f"❌ DB connection failed: {e}")
+        raise
 
 
 async def get_db():

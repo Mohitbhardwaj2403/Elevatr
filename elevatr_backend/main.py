@@ -25,13 +25,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("🚀  Elevatr backend starting up …")
+
     try:
         await create_tables()
         logger.info("✅ Database tables ready.")
     except Exception as e:
         logger.error(f"❌ DB connection failed: {e}")
-    logger.info("✅  Database tables ready.")
+
     yield
+
     logger.info("🛑  Elevatr backend shutting down.")
 
 
