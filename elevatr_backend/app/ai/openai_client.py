@@ -1,12 +1,16 @@
 """
-OpenAI async client wrapper.
-Falls back to rule-based responses when the API key is not configured,
-so the backend runs locally without a paid key during development.
+LLM async client wrapper.
+
+Prefers Gemini when GEMINI_API_KEY is configured, otherwise uses OpenAI.
+Falls back to realistic stub responses when no provider key is configured,
+so the backend runs locally during development.
 """
 
 import json
 import logging
 from typing import Any
+
+import httpx
 
 from app.core.config import settings
 
@@ -23,6 +27,60 @@ def _get_client():
     return _client
 
 
+async def _gemini_generate(
+    *,
+    system_prompt: str,
+    user_message: str,
+    response_format: str,
+    temperature: float,
+    max_tokens: int,
+) -> tuple[str, int]:
+    """
+    Minimal Gemini REST call (no extra SDK dependency).
+    Uses the Generative Language API v1beta.
+    """
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/"
+        f"models/{settings.GEMINI_MODEL}:generateContent"
+    )
+
+    if response_format == "json":
+        format_note = (
+            "\n\nReturn ONLY a valid JSON object. Do not wrap it in markdown fences."
+        )
+    else:
+        format_note = ""
+
+    payload: dict[str, Any] = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": f"{system_prompt}\n\n{user_message}{format_note}"}],
+            }
+        ],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        resp = await client.post(url, params={"key": settings.GEMINI_API_KEY}, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+
+    candidates = data.get("candidates") or []
+    content = ""
+    if candidates:
+        parts = (((candidates[0] or {}).get("content") or {}).get("parts")) or []
+        if parts and isinstance(parts[0], dict):
+            content = str(parts[0].get("text") or "")
+
+    usage = data.get("usageMetadata") or {}
+    tokens = int(usage.get("totalTokenCount") or 0)
+    return content.strip(), tokens
+
+
 async def chat_completion(
     system_prompt: str,
     user_message: str,
@@ -37,9 +95,26 @@ async def chat_completion(
     -------
     (response_text, tokens_used)
     """
+    resolved_temperature = (
+        temperature if temperature is not None else settings.OPENAI_TEMPERATURE
+    )
+    resolved_max_tokens = max_tokens if max_tokens is not None else settings.OPENAI_MAX_TOKENS
+
+    if settings.GEMINI_API_KEY:
+        try:
+            return await _gemini_generate(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                response_format=response_format,
+                temperature=resolved_temperature,
+                max_tokens=resolved_max_tokens,
+            )
+        except Exception:
+            logger.exception("Gemini call failed; falling back to OpenAI/stub.")
+
     client = _get_client()
     if client is None:
-        logger.warning("OPENAI_API_KEY not set – returning stub response.")
+        logger.warning("No LLM API key set – returning stub response.")
         return _stub_response(user_message, response_format), 0
 
     kwargs: dict[str, Any] = {
@@ -48,8 +123,8 @@ async def chat_completion(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": temperature if temperature is not None else settings.OPENAI_TEMPERATURE,
-        "max_tokens": max_tokens if max_tokens is not None else settings.OPENAI_MAX_TOKENS,
+        "temperature": resolved_temperature,
+        "max_tokens": resolved_max_tokens,
     }
 
     if response_format == "json":

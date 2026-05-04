@@ -3,12 +3,17 @@ import { Upload, FileText, TrendingUp, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ATSAnalyzer } from "../utils/atsAnalyzer";
 import { extractResumeText } from "../utils/extractResumeText";
+import { apiFetch } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 
 const ResumeAnalysis: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [jobDescription, setJobDescription] = useState("");
+  const [mode, setMode] = useState<"local" | "ai">("local");
   const inputRef = useRef<HTMLInputElement>(null);
+  const { token } = useAuth();
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -31,22 +36,44 @@ const ResumeAnalysis: React.FC = () => {
         return;
       }
 
-      const analysis = new ATSAnalyzer(text).analyze();
-      const score = analysis.score;
-      const message =
-        score >= 80
-          ? "Excellent resume! Minor improvements recommended."
-          : score >= 60
-            ? "Good resume but needs some refinements."
-            : "Resume needs major improvements for ATS.";
+      if (mode === "ai") {
+        if (!token) {
+          throw new Error("Please login to use AI ATS scoring.");
+        }
+        if (!jobDescription.trim()) {
+          throw new Error("Please paste a job description for AI ATS scoring.");
+        }
+        const ai = await apiFetch<any>("/resume/ats-score", {
+          method: "POST",
+          auth: true,
+          body: JSON.stringify({ resume_text: text, job_description: jobDescription }),
+        });
+        setResult({
+          score: ai.score,
+          strengths: ai.strengths || [],
+          improvements: (ai.suggestions || []).map((s: any) => s?.message).filter(Boolean),
+          keywords: ai.keywords_missing || [],
+          message: ai.message || "AI ATS analysis complete.",
+          _raw: ai,
+        });
+      } else {
+        const analysis = new ATSAnalyzer(text).analyze();
+        const score = analysis.score;
+        const message =
+          score >= 80
+            ? "Excellent resume! Minor improvements recommended."
+            : score >= 60
+              ? "Good resume but needs some refinements."
+              : "Resume needs major improvements for ATS.";
 
-      setResult({
-        score,
-        strengths: analysis.strengths,
-        improvements: analysis.improvements,
-        keywords: analysis.keywords,
-        message,
-      });
+        setResult({
+          score,
+          strengths: analysis.strengths,
+          improvements: analysis.improvements,
+          keywords: analysis.keywords,
+          message,
+        });
+      }
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Error analyzing resume");
@@ -72,6 +99,56 @@ const ResumeAnalysis: React.FC = () => {
       <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
         AI Resume Analysis
       </h1>
+
+      {/* Mode */}
+      <div className="max-w-3xl mx-auto mb-6 bg-white rounded-xl shadow p-4">
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold text-gray-800">Analysis mode</p>
+            <p className="text-sm text-gray-600">
+              Local mode works without login. AI mode calls the backend (Gemini) and needs a job description.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setMode("local")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                mode === "local" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300"
+              }`}
+            >
+              Local (offline)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("ai")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                mode === "ai" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300"
+              }`}
+            >
+              AI ATS (Gemini)
+            </button>
+          </div>
+        </div>
+
+        {mode === "ai" && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Job description</label>
+            <textarea
+              value={jobDescription}
+              onChange={(e) => setJobDescription(e.target.value)}
+              rows={6}
+              className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              placeholder="Paste the job description here (required for AI ATS scoring)"
+            />
+            {!token && (
+              <p className="mt-2 text-sm text-red-600">
+                You’re not logged in. AI ATS requires login because it calls the backend.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Upload box */}
       {!file && !result && (

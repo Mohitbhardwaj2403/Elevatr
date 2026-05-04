@@ -3,8 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || 'http://localhost:8000/api/v1';
-
 const Signup: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
@@ -55,18 +53,8 @@ const Signup: React.FC = () => {
     setError('');
 
     try {
-      const response=  await fetch(`${API_BASE_URL}/auth/register`,{
-        method:"POST",
-        body:JSON.stringify(formData),
-        headers:{
-          'Content-Type':'application/json'
-        }
-      })
-      await response.json()
-      if(response.status==201){
-        navigate('/dashboard');
-      }
       await signup(formData.name, formData.email, formData.password);
+      navigate('/dashboard');
     } catch (err) {
       setError('Failed to create account. Please try again.');
     } finally {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || 'http://localhost:8000/api/v1';
+import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -12,6 +12,7 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,18 +25,8 @@ const Login: React.FC = () => {
     setError('');
 
     try {
-      const resp=await fetch(`${API_BASE_URL}/auth/login`,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json'
-        },
-        body:JSON.stringify({email,password})
-      })
-      if(resp.status==200){
-        const {user}=await resp.json()
-        alert("Hello"+user.name)
-        navigate('/dashboard');
-      }
+      await login(email, password);
+      navigate('/dashboard');
     } catch (err) {
       setError('Invalid email or password');
     } finally {

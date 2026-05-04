@@ -1,6 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, Send, Mic, MicOff, BarChart3, Clock, Target, Home } from 'lucide-react';
+import { MessageCircle, Send, Mic, MicOff, BarChart3, Clock, Target, Home, Volume2, VolumeX } from 'lucide-react';
+import { apiFetch } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: any;
+    SpeechRecognition?: any;
+  }
+}
 
 interface Message {
   id: string;
@@ -24,7 +33,13 @@ const MockInterview: React.FC = () => {
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
+  const [questions, setQuestions] = useState<string[]>([]);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const recognitionRef = useRef<any | null>(null);
   const [sessionData, setSessionData] = useState<InterviewSession>({
     jobRole: '',
     duration: 0,
@@ -36,6 +51,96 @@ const MockInterview: React.FC = () => {
   const [showResults, setShowResults] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { token } = useAuth();
+
+  const canTts = typeof window !== 'undefined' && typeof window.speechSynthesis !== 'undefined';
+  const SpeechRecognitionCtor =
+    typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : undefined;
+  const canStt = Boolean(SpeechRecognitionCtor);
+
+  const speak = (text: string) => {
+    if (!ttsEnabled || !canTts) return;
+    if (!text?.trim()) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = 1;
+      utter.pitch = 1;
+      utter.lang = 'en-US';
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // ignore
+    }
+  };
+
+  const stopSpeak = () => {
+    if (!canTts) return;
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore
+    }
+  };
+
+  const startListening = () => {
+    if (!canStt) {
+      alert('Voice input is not supported in this browser.');
+      return;
+    }
+    if (isListening) return;
+
+    const rec = new SpeechRecognitionCtor();
+    recognitionRef.current = rec;
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+
+    let finalText = '';
+
+    rec.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0]?.transcript || '';
+        if (event.results[i].isFinal) finalText += t;
+        else interim += t;
+      }
+      setCurrentMessage((finalText + interim).trim());
+    };
+
+    rec.onerror = () => {
+      setIsListening(false);
+    };
+    rec.onend = () => {
+      setIsListening(false);
+      setIsRecording(false);
+      // Auto-send if we have something
+      setTimeout(() => {
+        const text = (finalText || '').trim();
+        if (text) sendVoiceMessage(text);
+      }, 100);
+    };
+
+    setIsListening(true);
+    setIsRecording(true);
+    try {
+      rec.start();
+    } catch {
+      setIsListening(false);
+      setIsRecording(false);
+    }
+  };
+
+  const stopListening = () => {
+    const rec = recognitionRef.current;
+    if (!rec) return;
+    try {
+      rec.stop();
+    } catch {
+      // ignore
+    }
+  };
 
   const jobRoles = [
     { id: 'software-engineer', name: 'Software Engineer', category: 'Technology' },
@@ -131,6 +236,19 @@ const MockInterview: React.FC = () => {
   }, [messages]);
 
   useEffect(() => {
+    // cleanup voice on unmount
+    return () => {
+      stopSpeak();
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // ignore
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     if (interviewStarted && !showResults) {
       intervalRef.current = setInterval(() => {
         setSessionData(prev => ({ ...prev, duration: prev.duration + 1 }));
@@ -144,7 +262,7 @@ const MockInterview: React.FC = () => {
     };
   }, [interviewStarted, showResults]);
 
-  const startInterview = () => {
+  const startInterview = async () => {
     const role = jobRoles.find(r => r.id === selectedRole);
     if (!role) return;
 
@@ -157,73 +275,152 @@ const MockInterview: React.FC = () => {
       difficulty: selectedDifficulty,
       date: new Date()
     });
+    setShowResults(false);
+    setSessionId(null);
+    setQuestionIndex(0);
 
     // Welcome message
     const welcomeMessage: Message = {
       id: '1',
-      content: `Hello! I'm your AI interviewer. I'll be conducting a mock interview for the ${role.name} position. This is a safe space to practice, so don't worry about making mistakes. Are you ready to begin?`,
+      content: `Hello! I'm your AI interviewer. I'll be conducting a mock interview for the ${role.name} position. When you're ready, I'll ask the first question.`,
       sender: 'ai',
       timestamp: new Date()
     };
 
     setMessages([welcomeMessage]);
+    speak(welcomeMessage.content);
 
-    // First question after a brief delay
-    setTimeout(() => {
-      const questions = sampleQuestions[selectedRole as keyof typeof sampleQuestions] || [
-        "Tell me about yourself and why you're interested in this role."
-      ];
+    if (!token) {
+      const msg: Message = {
+        id: 'auth-required',
+        content: "Please login to use AI Mock Interview (it calls the backend).",
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, msg]);
+      speak(msg.content);
+      return;
+    }
+
+    try {
+      const res = await apiFetch<{ questions: string[] }>('/interview/generate-questions', {
+        method: 'POST',
+        auth: true,
+        body: JSON.stringify({
+          job_role: role.name,
+          difficulty: selectedDifficulty,
+          num_questions: 5,
+        }),
+      });
+      const qs = (res.questions || []).filter(Boolean);
+      setQuestions(qs);
+
+      const first = qs[0] || "Tell me about yourself and why you're interested in this role.";
       const firstQuestion: Message = {
-        id: '2',
-        content: questions[0],
+        id: 'q-0',
+        content: first,
         sender: 'ai',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, firstQuestion]);
+      speak(firstQuestion.content);
       setSessionData(prev => ({ ...prev, questionsAsked: 1 }));
-    }, 2000);
+    } catch (e) {
+      const fallback = sampleQuestions[selectedRole as keyof typeof sampleQuestions]?.[0]
+        || "Tell me about yourself and why you're interested in this role.";
+      setQuestions([fallback]);
+      setMessages(prev => [...prev, {
+        id: 'q-fallback',
+        content: fallback,
+        sender: 'ai',
+        timestamp: new Date(),
+      }]);
+      speak(fallback);
+      setSessionData(prev => ({ ...prev, questionsAsked: 1 }));
+    }
   };
 
-  const sendMessage = () => {
-    if (!currentMessage.trim()) return;
+  const sendVoiceMessage = async (voiceText: string) => {
+    setCurrentMessage(voiceText);
+    await sendMessage(voiceText);
+  };
+
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? currentMessage).trim();
+    if (!text) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: currentMessage,
+      content: text,
       sender: 'user',
       timestamp: new Date()
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const answer = text;
     setCurrentMessage('');
 
-    // Simulate AI response
-    setTimeout(() => {
-      const responses = [
-        "That's a great answer! Can you tell me more about your experience with teamwork?",
-        "Interesting perspective. How would you handle a situation where you disagreed with a team member?",
-        "Good point. What do you think are your biggest strengths for this role?",
-        "I can see you've thought about this. What motivates you in your work?",
-        "Thank you for sharing that. Let's talk about your long-term career goals."
-      ];
+    const currentQ = questions[questionIndex] || messages.slice().reverse().find(m => m.sender === 'ai')?.content || "";
 
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        content: responses[Math.floor(Math.random() * responses.length)],
+    if (!token) return;
+
+    try {
+      const res = await apiFetch<any>('/interview/analyze-answer', {
+        method: 'POST',
+        auth: true,
+        body: JSON.stringify({
+          session_id: sessionId,
+          job_role: sessionData.jobRole,
+          difficulty: selectedDifficulty,
+          question: currentQ,
+          answer,
+        }),
+      });
+
+      const feedbackText =
+        res?.feedback?.feedback ||
+        "Thanks. I’ve recorded your answer.";
+
+      const scoreValue = Number(res?.feedback?.score || 0);
+      setSessionId(res?.session?.id || sessionId);
+      setSessionData(prev => ({ ...prev, score: scoreValue }));
+
+      setMessages(prev => [...prev, {
+        id: `${Date.now()}-feedback`,
+        content: feedbackText,
         sender: 'ai',
         timestamp: new Date()
-      };
+      }]);
+      speak(feedbackText);
+    } catch {
+      setMessages(prev => [...prev, {
+        id: `${Date.now()}-feedback-fallback`,
+        content: "Thanks — try to be more specific and quantify your impact where possible. Let's continue.",
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+      speak("Thanks — try to be more specific and quantify your impact where possible. Let's continue.");
+    }
 
-      setMessages(prev => [...prev, aiResponse]);
+    const nextIndex = questionIndex + 1;
+    if (nextIndex >= Math.max(1, questions.length)) {
+      endInterview();
+      return;
+    }
+
+    setQuestionIndex(nextIndex);
+    setTimeout(() => {
+      const nextQ = questions[nextIndex];
+      if (!nextQ) return;
+      setMessages(prev => [...prev, {
+        id: `q-${nextIndex}`,
+        content: nextQ,
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+      speak(nextQ);
       setSessionData(prev => ({ ...prev, questionsAsked: prev.questionsAsked + 1 }));
-
-      // End interview after 5 questions
-      if (sessionData.questionsAsked >= 4) {
-        setTimeout(() => {
-          endInterview();
-        }, 3000);
-      }
-    }, 1500 + Math.random() * 2000);
+    }, 900);
   };
 
   const endInterview = () => {
@@ -235,10 +432,11 @@ const MockInterview: React.FC = () => {
     };
 
     setMessages(prev => [...prev, finalMessage]);
+    speak(finalMessage.content);
 
     setTimeout(() => {
       setShowResults(true);
-      setSessionData(prev => ({ ...prev, score: Math.floor(Math.random() * 20) + 75 }));
+      setSessionData(prev => ({ ...prev, score: prev.score || Math.floor(Math.random() * 10) + 75 }));
     }, 3000);
   };
 
@@ -493,12 +691,24 @@ const MockInterview: React.FC = () => {
                 <span>Questions: {sessionData.questionsAsked}</span>
               </div>
             </div>
-            <button
-              onClick={endInterview}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors"
-            >
-              End Interview
-            </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setTtsEnabled((v) => !v)}
+                    className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center"
+                    title={canTts ? "Toggle voice (TTS)" : "TTS not supported"}
+                    disabled={!canTts}
+                  >
+                    {ttsEnabled ? <Volume2 className="w-4 h-4 mr-2" /> : <VolumeX className="w-4 h-4 mr-2" />}
+                    Voice
+                  </button>
+                  <button
+                    onClick={endInterview}
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors"
+                  >
+                    End Interview
+                  </button>
+                </div>
           </div>
         </div>
       </div>
@@ -536,7 +746,14 @@ const MockInterview: React.FC = () => {
           <div className="p-6 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => setIsRecording(!isRecording)}
+                onClick={() => {
+                  if (!canStt) {
+                    alert("Voice input isn't supported in this browser. Please type your answer.");
+                    return;
+                  }
+                  if (isListening) stopListening();
+                  else startListening();
+                }}
                 className={`p-3 rounded-full ${
                   isRecording ? 'bg-red-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 } transition-colors`}
@@ -548,17 +765,39 @@ const MockInterview: React.FC = () => {
                   type="text"
                   value={currentMessage}
                   onChange={(e) => setCurrentMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder="Type your answer here..."
+                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder={canStt ? "Type your answer or use voice..." : "Type your answer here..."}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                 />
               </div>
               <button
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!currentMessage.trim()}
                 className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
               >
                 <Send className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="mt-3 text-xs text-gray-600 dark:text-gray-400 flex items-center justify-between">
+              <div>
+                {canStt ? (
+                  <span>
+                    Voice input: <span className="font-semibold">{isListening ? "listening…" : "ready"}</span>
+                  </span>
+                ) : (
+                  <span>Voice input not supported in this browser.</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const lastAi = [...messages].reverse().find((m) => m.sender === "ai")?.content || "";
+                  speak(lastAi);
+                }}
+                className="text-blue-600 hover:text-blue-700 font-semibold"
+                disabled={!canTts || !ttsEnabled}
+              >
+                Repeat last question
               </button>
             </div>
           </div>
