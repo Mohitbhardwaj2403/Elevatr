@@ -1,0 +1,81 @@
+version: "3.9"
+
+# ── Elevatr – Full-Stack Docker Compose ──────────────────────────────────────
+# Services: api (FastAPI), db (PostgreSQL 16), redis (Redis 7)
+#
+# Usage:
+#   docker compose up --build         # start everything
+#   docker compose up --build -d      # detached
+#   docker compose down -v            # stop + remove volumes
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: elevatr_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-elevatr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-elevatr_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-elevatr}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-elevatr} -d ${POSTGRES_DB:-elevatr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: elevatr_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: elevatr_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override DB/Redis URLs to use Docker service names
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-elevatr}:${POSTGRES_PASSWORD:-elevatr_pass}@db:5432/${POSTGRES_DB:-elevatr}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Hot-reload in development – remove in production
+      - .:/app
+    command: >
+      uvicorn main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --log-level info
+
+volumes:
+  postgres_data:
+  redis_data:
