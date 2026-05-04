@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
     PORT: int = 8000
+    ALLOWED_HOSTS: list[str] = ["*"]
 
     # ── Database (IMPORTANT FIX) ─────────
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
