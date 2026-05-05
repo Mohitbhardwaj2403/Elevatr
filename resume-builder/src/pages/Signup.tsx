@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getApiErrorMessage } from '../lib/api';
 
 const Signup: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -56,7 +57,12 @@ const Signup: React.FC = () => {
       await signup(formData.name, formData.email, formData.password);
       navigate('/dashboard');
     } catch (err) {
-      setError('Failed to create account. Please try again.');
+      setError(
+        getApiErrorMessage(
+          err,
+          'Failed to create account. Please try again.',
+        ),
+      );
     } finally {
       setIsLoading(false);
     }

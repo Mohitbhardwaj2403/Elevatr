@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
+import { getApiErrorMessage } from '../lib/api';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -28,7 +29,7 @@ const Login: React.FC = () => {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError('Invalid email or password');
+      setError(getApiErrorMessage(err, 'Invalid email or password'));
     } finally {
       setIsLoading(false);
     }

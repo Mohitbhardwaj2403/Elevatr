@@ -55,8 +55,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: "POST",
       body: JSON.stringify({ name, email, password }),
     });
-    // Auto-login after successful signup
-    await login(email, password);
+    try {
+      await login(email, password);
+    } catch (e) {
+      throw Object.assign(new Error("Account created but login failed — please sign in manually."), {
+        cause: e,
+      });
+    }
   };
 
   useEffect(() => {

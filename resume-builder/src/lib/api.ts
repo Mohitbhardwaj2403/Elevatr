@@ -8,8 +8,60 @@ export type ApiError = {
   details?: unknown;
 };
 
+function formatBackendDetail(data: unknown): string | null {
+  const detail = (data as { detail?: unknown })?.detail;
+  if (detail == null) return null;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          const loc = Array.isArray((item as { loc?: unknown }).loc)
+            ? ((item as { loc: unknown[] }).loc as unknown[])
+                .filter((x) => x !== "body")
+                .join(".")
+            : "";
+          const msg = String((item as { msg?: unknown }).msg ?? "");
+          return loc ? `${loc}: ${msg}` : msg;
+        }
+        return "";
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join("; ") : null;
+  }
+  if (typeof detail === "object") {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return String(detail);
+    }
+  }
+  return String(detail);
+}
+
 function getToken(): string | null {
   return localStorage.getItem("token");
+}
+
+export function isApiError(err: unknown): err is ApiError {
+  return Boolean(err && typeof err === "object" && "status" in err && "message" in err);
+}
+
+export function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
+    return "Cannot reach the backend API. Check that the server is running and VITE_API_URL is correct.";
+  }
+  if (isApiError(err)) return err.message || fallback;
+  if (err instanceof Error) {
+    const cause = (err as Error & { cause?: unknown }).cause;
+    if (cause && isApiError(cause)) {
+      const prefix = err.message?.trim() ? `${err.message.trim()} — ` : "";
+      return `${prefix}${cause.message || fallback}`;
+    }
+    return err.message || fallback;
+  }
+  return fallback;
 }
 
 export async function apiFetch<T>(
@@ -26,21 +78,32 @@ export async function apiFetch<T>(
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const resp = await fetch(url, { ...options, headers });
+  let resp: Response;
+  try {
+    resp = await fetch(url, { ...options, headers });
+  } catch (e) {
+    const msg =
+      e instanceof TypeError
+        ? "Network error — cannot reach API (check backend URL / CORS)."
+        : "Network error — cannot reach API.";
+    throw { status: 0, message: msg, details: e } satisfies ApiError;
+  }
   const contentType = resp.headers.get("content-type") || "";
 
   let data: unknown = null;
   if (contentType.includes("application/json")) {
-    data = await resp.json();
+    try {
+      data = await resp.json();
+    } catch {
+      data = await resp.text();
+    }
   } else {
     data = await resp.text();
   }
 
   if (!resp.ok) {
-    const message =
-      typeof (data as any)?.detail === "string"
-        ? (data as any).detail
-        : `Request failed (${resp.status})`;
+    const fromDetail = formatBackendDetail(data);
+    const message = fromDetail || `Request failed (${resp.status})`;
     const err: ApiError = { status: resp.status, message, details: data };
     throw err;
   }
