@@ -32,23 +32,23 @@ class ResumeImproveRequest(BaseModel):
 class ATSScoreRequest(BaseModel):
     resume_text: str = Field(..., min_length=50)
     job_description: str = Field(..., min_length=30, description="Job description to compare against")
-
-
-class ATSSuggestion(BaseModel):
-    category: str
-    message: str
-    priority: str  # high | medium | low
+    job_role: Optional[str] = Field(
+        None, description="Target role like software_engineer or data_scientist"
+    )
 
 
 class ATSScoreResponse(BaseModel):
-    score: float
-    grade: str              # A, B, C, D, F
-    message: str
-    keywords_found: List[str]
-    keywords_missing: List[str]
-    strengths: List[str]
-    suggestions: List[ATSSuggestion]
-    section_scores: dict
+    score: int
+    mode: str = "dataset"
+    is_resume: bool
+    keyword_match: int = 0
+    matched_keywords: List[str] = Field(default_factory=list)
+    missing_keywords: List[str] = Field(default_factory=list)
+    sections_found: List[str] = Field(default_factory=list)
+    missing_sections: List[str] = Field(default_factory=list)
+    content_quality_score: int = 0
+    formatting_score: int = 0
+    feedback: List[str] = Field(default_factory=list)
 
 
 class ResumeOut(BaseModel):

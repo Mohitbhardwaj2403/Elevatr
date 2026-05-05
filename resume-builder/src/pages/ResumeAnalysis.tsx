@@ -11,6 +11,9 @@ const ResumeAnalysis: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [jobDescription, setJobDescription] = useState("");
+  const [jobRole, setJobRole] = useState<"software_engineer" | "data_scientist">(
+    "software_engineer",
+  );
   const [mode, setMode] = useState<"local" | "ai">("local");
   const inputRef = useRef<HTMLInputElement>(null);
   const { token } = useAuth();
@@ -46,14 +49,27 @@ const ResumeAnalysis: React.FC = () => {
         const ai = await apiFetch<any>("/resume/ats-score", {
           method: "POST",
           auth: true,
-          body: JSON.stringify({ resume_text: text, job_description: jobDescription }),
+          body: JSON.stringify({
+            resume_text: text,
+            job_description: jobDescription,
+            job_role: jobRole,
+          }),
         });
+        const feedback = Array.isArray(ai.feedback) ? ai.feedback : [];
+        const strengths = feedback.filter((f: string) => !f.toLowerCase().includes("missing"));
+        const improvements = feedback.filter((f: string) => f.toLowerCase().includes("missing"));
         setResult({
           score: ai.score,
-          strengths: ai.strengths || [],
-          improvements: (ai.suggestions || []).map((s: any) => s?.message).filter(Boolean),
-          keywords: ai.keywords_missing || [],
-          message: ai.message || "AI ATS analysis complete.",
+          strengths: strengths.length ? strengths : ["Deterministic ATS analysis complete."],
+          improvements: improvements.length ? improvements : feedback,
+          keywords: ai.missing_keywords || [],
+          message: ai.is_resume ? "Dataset ATS analysis complete." : "Uploaded file is not a valid resume.",
+          keywordMatch: ai.keyword_match ?? 0,
+          sectionsFound: ai.sections_found || [],
+          missingSections: ai.missing_sections || [],
+          contentQualityScore: ai.content_quality_score ?? 0,
+          formattingScore: ai.formatting_score ?? 0,
+          isResume: ai.is_resume ?? true,
           _raw: ai,
         });
       } else {
@@ -106,7 +122,7 @@ const ResumeAnalysis: React.FC = () => {
           <div>
             <p className="font-semibold text-gray-800">Analysis mode</p>
             <p className="text-sm text-gray-600">
-              Local mode works without login. AI mode calls the backend (Gemini) and needs a job description.
+              Local mode works without login. Backend ATS mode uses deterministic dataset scoring and needs a job description.
             </p>
           </div>
           <div className="flex gap-2">
@@ -126,13 +142,22 @@ const ResumeAnalysis: React.FC = () => {
                 mode === "ai" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300"
               }`}
             >
-              AI ATS (Gemini)
+              Backend ATS (Dataset)
             </button>
           </div>
         </div>
 
         {mode === "ai" && (
           <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Target role</label>
+            <select
+              value={jobRole}
+              onChange={(e) => setJobRole(e.target.value as "software_engineer" | "data_scientist")}
+              className="w-full border border-gray-300 rounded-lg p-3 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              <option value="software_engineer">Software Engineer</option>
+              <option value="data_scientist">Data Scientist</option>
+            </select>
             <label className="block text-sm font-medium text-gray-700 mb-1">Job description</label>
             <textarea
               value={jobDescription}
@@ -214,6 +239,13 @@ const ResumeAnalysis: React.FC = () => {
               {result.score}
             </p>
             <p className="mt-3 text-gray-600">{result.message}</p>
+            {mode === "ai" && result.isResume && (
+              <div className="mt-4 text-sm text-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <p>Keyword Match: <span className="font-semibold">{result.keywordMatch}%</span></p>
+                <p>Content Quality: <span className="font-semibold">{result.contentQualityScore}%</span></p>
+                <p>Formatting: <span className="font-semibold">{result.formattingScore}%</span></p>
+              </div>
+            )}
           </div>
 
           {/* Strengths */}
@@ -256,6 +288,18 @@ const ResumeAnalysis: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {mode === "ai" && (
+            <div className="bg-white p-6 rounded-xl shadow">
+              <h3 className="font-bold text-lg mb-3">Section Coverage</h3>
+              <p className="text-sm text-green-700 mb-2">
+                Found: {(result.sectionsFound || []).join(", ") || "None"}
+              </p>
+              <p className="text-sm text-red-700">
+                Missing: {(result.missingSections || []).join(", ") || "None"}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

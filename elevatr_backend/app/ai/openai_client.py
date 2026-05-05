@@ -19,11 +19,33 @@ logger = logging.getLogger(__name__)
 _client = None
 
 
+def _looks_like_placeholder(value: str) -> bool:
+    """Detect obvious template/placeholder API keys."""
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    placeholder_markers = (
+        "...",
+        "your-",
+        "change_me",
+        "example",
+        "replace",
+        "placeholder",
+        "dummy",
+    )
+    return any(marker in normalized for marker in placeholder_markers)
+
+
+def _has_valid_openai_key() -> bool:
+    key = (settings.OPENAI_API_KEY or "").strip()
+    return bool(key) and not _looks_like_placeholder(key)
+
+
 def _get_client():
     global _client
-    if _client is None and settings.OPENAI_API_KEY:
+    if _client is None and _has_valid_openai_key():
         from openai import AsyncOpenAI
-        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY.strip())
     return _client
 
 
@@ -130,10 +152,14 @@ async def chat_completion(
     if response_format == "json":
         kwargs["response_format"] = {"type": "json_object"}
 
-    response = await client.chat.completions.create(**kwargs)
-    content = response.choices[0].message.content or ""
-    tokens = response.usage.total_tokens if response.usage else 0
-    return content.strip(), tokens
+    try:
+        response = await client.chat.completions.create(**kwargs)
+        content = response.choices[0].message.content or ""
+        tokens = response.usage.total_tokens if response.usage else 0
+        return content.strip(), tokens
+    except Exception:
+        logger.exception("OpenAI call failed; returning stub response.")
+        return _stub_response(user_message, response_format), 0
 
 
 # ─── Development stub ────────────────────────────────────────────
