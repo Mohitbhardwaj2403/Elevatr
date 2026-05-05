@@ -49,19 +49,26 @@ export function isApiError(err: unknown): err is ApiError {
 }
 
 export function getApiErrorMessage(err: unknown, fallback: string): string {
+  const baseHint = `API: ${API_BASE_URL}`;
   if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
-    return "Cannot reach the backend API. Check that the server is running and VITE_API_URL is correct.";
+    return `Cannot reach the backend API (${baseHint}). Is uvicorn running on port 8000? If you open the app via 127.0.0.1, add that origin to backend CORS_ORIGINS.`;
   }
-  if (isApiError(err)) return err.message || fallback;
+  if (isApiError(err)) {
+    const core = err.message?.trim() || fallback;
+    return err.status ? `${core} (${baseHint}, HTTP ${err.status})` : `${core} (${baseHint})`;
+  }
   if (err instanceof Error) {
     const cause = (err as Error & { cause?: unknown }).cause;
     if (cause && isApiError(cause)) {
       const prefix = err.message?.trim() ? `${err.message.trim()} — ` : "";
-      return `${prefix}${cause.message || fallback}`;
+      const core = cause.message?.trim() || fallback;
+      const suffix = cause.status ? ` (${baseHint}, HTTP ${cause.status})` : ` (${baseHint})`;
+      return `${prefix}${core}${suffix}`;
     }
-    return err.message || fallback;
+    const msg = err.message?.trim();
+    return msg ? `${msg} (${baseHint})` : `${fallback} (${baseHint})`;
   }
-  return fallback;
+  return `${fallback} (${baseHint})`;
 }
 
 export async function apiFetch<T>(
