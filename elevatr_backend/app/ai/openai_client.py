@@ -153,11 +153,25 @@ async def chat_completion(
         kwargs["response_format"] = {"type": "json_object"}
 
     try:
+        from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
+        recoverable_errors: tuple[type[BaseException], ...] = (
+            APIError,
+            APIConnectionError,
+            APITimeoutError,
+            RateLimitError,
+            httpx.HTTPError,
+            TimeoutError,
+        )
+    except Exception:
+        # If OpenAI error classes cannot be imported, only catch network-level failures.
+        recoverable_errors = (httpx.HTTPError, TimeoutError)
+
+    try:
         response = await client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content or ""
         tokens = response.usage.total_tokens if response.usage else 0
         return content.strip(), tokens
-    except Exception:
+    except recoverable_errors:
         logger.exception("OpenAI call failed; returning stub response.")
         return _stub_response(user_message, response_format), 0
 

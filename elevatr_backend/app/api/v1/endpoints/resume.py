@@ -34,6 +34,7 @@ from app.services.resume_service import (
     improve_resume,
     list_resumes,
     score_ats,
+    score_ats_public,
     update_resume,
 )
 
@@ -78,6 +79,15 @@ async def ats_score(
     db: AsyncSession = Depends(get_db),
 ):
     return await score_ats(db, current_user.id, payload)
+
+
+@router.post(
+    "/ats-score-public",
+    response_model=ATSScoreResponse,
+    summary="Public ATS score endpoint (no login required)",
+)
+async def ats_score_public(payload: ATSScoreRequest):
+    return await score_ats_public(payload)
 
 
 @router.get(

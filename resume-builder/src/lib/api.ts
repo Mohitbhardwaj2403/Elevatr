@@ -1,4 +1,5 @@
 const API_BASE_URL =
+  (import.meta.env.NEXT_PUBLIC_API_URL as string | undefined)?.replace(/\/$/, "") ||
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ||
   "http://localhost:8000/api/v1";
 
@@ -85,15 +86,28 @@ export async function apiFetch<T>(
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
+  const runFetch = async (): Promise<Response> =>
+    fetch(url, {
+      ...options,
+      headers,
+      credentials: options.credentials ?? "include",
+    });
+
   let resp: Response;
   try {
-    resp = await fetch(url, { ...options, headers });
+    resp = await runFetch();
   } catch (e) {
-    const msg =
-      e instanceof TypeError
-        ? "Network error — cannot reach API (check backend URL / CORS)."
-        : "Network error — cannot reach API.";
-    throw { status: 0, message: msg, details: e } satisfies ApiError;
+    // Render cold starts can fail the very first request. Retry once.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    try {
+      resp = await runFetch();
+    } catch (retryError) {
+      const msg =
+        retryError instanceof TypeError
+          ? "Network error — cannot reach API (check backend URL / CORS)."
+          : "Network error — cannot reach API.";
+      throw { status: 0, message: msg, details: retryError } satisfies ApiError;
+    }
   }
   const contentType = resp.headers.get("content-type") || "";
 

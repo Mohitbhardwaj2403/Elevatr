@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
-from app.core.config import settings
+from app.core.config import parse_cors_origins, settings
 from app.core.logging import setup_logging
 from app.database.session import create_tables
 
@@ -49,9 +49,14 @@ app = FastAPI(
 )
 
 # ─────────────────────────── middleware ─────────────────────────
+cors_origins = parse_cors_origins(getattr(settings, "CORS_ORIGINS", None))
+if "*" in cors_origins:
+    logger.warning("CORS_ORIGINS contains '*' while credentials are enabled; removing wildcard.")
+    cors_origins = [origin for origin in cors_origins if origin != "*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,4 +71,9 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/health", tags=["Health"])
 async def health_check():
+    return {"status": "ok", "service": settings.PROJECT_NAME, "version": settings.VERSION}
+
+
+@app.get(f"{settings.API_V1_PREFIX}/health", tags=["Health"])
+async def versioned_health_check():
     return {"status": "ok", "service": settings.PROJECT_NAME, "version": settings.VERSION}

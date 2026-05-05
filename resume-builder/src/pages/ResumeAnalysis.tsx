@@ -40,15 +40,13 @@ const ResumeAnalysis: React.FC = () => {
       }
 
       if (mode === "ai") {
-        if (!token) {
-          throw new Error("Please login to use AI ATS scoring.");
-        }
         if (!jobDescription.trim()) {
           throw new Error("Please paste a job description for AI ATS scoring.");
         }
-        const ai = await apiFetch<any>("/resume/ats-score", {
+        const aiPath = token ? "/resume/ats-score" : "/resume/ats-score-public";
+        const ai = await apiFetch<any>(aiPath, {
           method: "POST",
-          auth: true,
+          auth: Boolean(token),
           body: JSON.stringify({
             resume_text: text,
             job_description: jobDescription,
@@ -56,16 +54,27 @@ const ResumeAnalysis: React.FC = () => {
           }),
         });
         const feedback = Array.isArray(ai.feedback) ? ai.feedback : [];
-        const strengths = feedback.filter((f: string) => !f.toLowerCase().includes("missing"));
-        const improvements = feedback.filter((f: string) => f.toLowerCase().includes("missing"));
+        const matchedKeywords = Array.isArray(ai.matched_keywords) ? ai.matched_keywords : [];
+        const sectionsFound = Array.isArray(ai.sections_found) ? ai.sections_found : [];
+        const strengths: string[] = [];
+        if ((ai.keyword_match ?? 0) >= 70) {
+          strengths.push(`Strong keyword match (${ai.keyword_match}%).`);
+        }
+        if (matchedKeywords.length > 0) {
+          strengths.push(`Matched keywords: ${matchedKeywords.join(", ")}`);
+        }
+        if (sectionsFound.length > 0) {
+          strengths.push(`Sections present: ${sectionsFound.join(", ")}`);
+        }
+        const improvements = feedback;
         setResult({
           score: ai.score,
           strengths: strengths.length ? strengths : ["Deterministic ATS analysis complete."],
-          improvements: improvements.length ? improvements : feedback,
+          improvements: improvements.length ? improvements : ["No specific improvements reported."],
           keywords: ai.missing_keywords || [],
           message: ai.is_resume ? "Dataset ATS analysis complete." : "Uploaded file is not a valid resume.",
           keywordMatch: ai.keyword_match ?? 0,
-          sectionsFound: ai.sections_found || [],
+          sectionsFound,
           missingSections: ai.missing_sections || [],
           contentQualityScore: ai.content_quality_score ?? 0,
           formattingScore: ai.formatting_score ?? 0,
@@ -166,11 +175,7 @@ const ResumeAnalysis: React.FC = () => {
               className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
               placeholder="Paste the job description here (required for AI ATS scoring)"
             />
-            {!token && (
-              <p className="mt-2 text-sm text-red-600">
-                You’re not logged in. AI ATS requires login because it calls the backend.
-              </p>
-            )}
+            {!token && <p className="mt-2 text-sm text-blue-700">Using public ATS endpoint (no login required).</p>}
           </div>
         )}
       </div>

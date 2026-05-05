@@ -181,6 +181,16 @@ async def score_ats(
     return response
 
 
+async def score_ats_public(payload: ATSScoreRequest) -> ATSScoreResponse:
+    """Run ATS analysis without authentication/session persistence."""
+    response = _dataset_ats_score(
+        resume_text=payload.resume_text,
+        job_description=payload.job_description,
+        job_role=payload.job_role,
+    )
+    return response
+
+
 # ─── Internal helpers ────────────────────────────────────────────
 
 def _dataset_ats_score(resume_text: str, job_description: str, job_role: str | None) -> ATSScoreResponse:

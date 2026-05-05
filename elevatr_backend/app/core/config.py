@@ -3,6 +3,7 @@ Elevatr – Centralised configuration via pydantic-settings.
 """
 
 import os
+import json
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -55,11 +56,36 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
     # ── CORS ─────────────────────────────
-    CORS_ORIGINS: List[str] = ["*"]
+    # Keep this explicit in production when allow_credentials=True.
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     # ── Limits ───────────────────────────
     MAX_RESUME_SIZE_CHARS: int = 50000
 
 
 settings = Settings()
+
+
+def parse_cors_origins(raw: str | List[str] | None) -> List[str]:
+    """Parse CORS origins from JSON array or comma-separated string."""
+    if not raw:
+        return settings.CORS_ORIGINS
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    value = raw.strip()
+    if not value:
+        return settings.CORS_ORIGINS
+    if value.startswith("["):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+        except json.JSONDecodeError:
+            pass
+    return [part.strip() for part in value.split(",") if part.strip()]
 
