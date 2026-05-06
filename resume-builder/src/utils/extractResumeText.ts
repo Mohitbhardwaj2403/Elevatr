@@ -30,35 +30,39 @@ function ensureRuntimeCompat() {
 export async function extractResumeText(file: File): Promise<string> {
   const lower = file.name.toLowerCase();
 
-  if (lower.endsWith('.txt')) {
+  if (lower.endsWith(".txt")) {
     return (await file.text()).trim();
   }
 
-  if (lower.endsWith('.pdf')) {
-    ensureRuntimeCompat();
+  if (lower.endsWith(".pdf")) {
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // Prefer legacy build for broader browser/runtime compatibility.
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const workerMod = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url');
-    pdfjs.GlobalWorkerOptions.workerSrc = workerMod.default;
+    // IMPORTANT
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
 
     const data = new Uint8Array(await file.arrayBuffer());
-    const doc = await pdfjs.getDocument({ data }).promise;
-    const parts: string[] = [];
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
+
+    const pdf = await pdfjsLib.getDocument({ data }).promise;
+
+    let text = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+
       const content = await page.getTextContent();
-      for (const item of content.items) {
-        if (item && typeof item === 'object' && 'str' in item && typeof (item as { str: string }).str === 'string') {
-          parts.push((item as { str: string }).str);
-        }
-      }
-      parts.push('\n');
+
+      const pageText = content.items
+        .map((item: any) => item.str || "")
+        .join(" ");
+
+      text += pageText + "\n";
     }
-    return parts.join(' ').replace(/\s+/g, ' ').trim();
+
+    return text.replace(/\s+/g, " ").trim();
   }
 
-  throw new Error(
-    'Please upload a PDF or .txt file. Word (.doc/.docx) is not supported here—export to PDF or paste text into a .txt file.',
-  );
+  throw new Error("Only PDF and TXT files are supported.");
 }
