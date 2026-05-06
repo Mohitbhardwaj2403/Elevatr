@@ -6,35 +6,44 @@
 export async function extractResumeText(file: File): Promise<string> {
   const lower = file.name.toLowerCase();
 
-  if (lower.endsWith('.txt')) {
+  if (lower.endsWith(".txt")) {
     return (await file.text()).trim();
   }
 
-  if (lower.endsWith('.pdf')) {
-    const pdfjs = await import('pdfjs-dist');
-    const workerMod = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
-    console.log("workign fine till here")
-    pdfjs.GlobalWorkerOptions.workerSrc = workerMod.default;
-    console.log('pdfjs', pdfjs);
+  if (lower.endsWith(".pdf")) {
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    const data = new Uint8Array(await file.arrayBuffer());
-    const doc = await pdfjs.getDocument({ data }).promise;
-    const parts: string[] = [];
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
-      const content = await page.getTextContent();
-      for (const item of content.items) {
-        if (item && typeof item === 'object' && 'str' in item && typeof (item as { str: string }).str === 'string') {
-          parts.push((item as { str: string }).str);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
+
+    const pdf = await pdfjsLib.getDocument({
+      data: await file.arrayBuffer(),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+    }).promise;
+
+    let text = "";
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+
+      const textContent = await page.getTextContent();
+
+      const items = Array.from(textContent.items);
+
+      for (const item of items as any[]) {
+        if (item?.str) {
+          text += item.str + " ";
         }
       }
-      parts.push('\n');
+
+      text += "\n";
     }
-    console.log("parts", parts.join(' ').replace(/\s+/g, ' ').trim());
-    return parts.join(' ').replace(/\s+/g, ' ').trim();
+
+    return text.replace(/\s+/g, " ").trim();
   }
 
-  throw new Error(
-    'Please upload a PDF or .txt file. Word (.doc/.docx) is not supported here—export to PDF or paste text into a .txt file.',
-  );
+  throw new Error("Only PDF and TXT files are supported.");
 }
