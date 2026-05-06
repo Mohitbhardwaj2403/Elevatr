@@ -30,6 +30,7 @@ export async function extractResumeText(file: File): Promise<string> {
       }
       parts.push('\n');
     }
+    console.log("parts", parts.join(' ').replace(/\s+/g, ' ').trim());
     return parts.join(' ').replace(/\s+/g, ' ').trim();
   }
 
