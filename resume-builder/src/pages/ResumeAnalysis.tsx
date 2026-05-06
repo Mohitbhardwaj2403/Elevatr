@@ -10,11 +10,12 @@ const ResumeAnalysis: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string>("");
   const [jobDescription, setJobDescription] = useState("");
   const [jobRole, setJobRole] = useState<"software_engineer" | "data_scientist">(
     "software_engineer",
   );
-  const [mode, setMode] = useState<"local" | "ai">("local");
+  const [mode, setMode] = useState<"local" | "ai">("ai");
   const inputRef = useRef<HTMLInputElement>(null);
   const { token } = useAuth();
 
@@ -23,33 +24,40 @@ const ResumeAnalysis: React.FC = () => {
     if (!f) return;
     setFile(f);
     setResult(null);
+    setErrorMessage("");
   };
 
   const analyzeResume = async () => {
     if (!file) return;
     setLoading(true);
+    setErrorMessage("");
 
     try {
       const text = await extractResumeText(file);
       if (text.length < 80) {
-        alert(
+        setErrorMessage(
           "Could not read enough text from this file. Try a different PDF, or save your resume as .txt.",
         );
         setLoading(false);
         return;
       }
 
+      const jd = jobDescription.trim();
+      if (!jd) {
+        throw new Error("Please paste a job description for ATS scoring.");
+      }
+      if (jd.length < 30) {
+        throw new Error("Job description must be at least 30 characters.");
+      }
+
       if (mode === "ai") {
-        if (!jobDescription.trim()) {
-          throw new Error("Please paste a job description for AI ATS scoring.");
-        }
         const aiPath = token ? "/resume/ats-score" : "/resume/ats-score-public";
         const ai = await apiFetch<any>(aiPath, {
           method: "POST",
           auth: Boolean(token),
           body: JSON.stringify({
             resume_text: text,
-            job_description: jobDescription,
+            job_description: jd,
             job_role: jobRole,
           }),
         });
@@ -82,7 +90,7 @@ const ResumeAnalysis: React.FC = () => {
           _raw: ai,
         });
       } else {
-        const analysis = new ATSAnalyzer(text).analyze();
+        const analysis = new ATSAnalyzer(text, jd).analyze();
         const score = analysis.score;
         const message =
           score >= 80
@@ -96,12 +104,18 @@ const ResumeAnalysis: React.FC = () => {
           strengths: analysis.strengths,
           improvements: analysis.improvements,
           keywords: analysis.keywords,
+          keywordMatch: analysis.jdMatchScore,
+          sectionsFound: [],
+          missingSections: [],
+          contentQualityScore: analysis.detailedBreakdown.keywords.score * 10,
+          formattingScore: analysis.detailedBreakdown.formatting.score * 10,
+          isResume: true,
           message,
         });
       }
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Error analyzing resume");
+      setErrorMessage(err instanceof Error ? err.message : "Error analyzing resume");
     }
 
     setLoading(false);
@@ -115,6 +129,20 @@ const ResumeAnalysis: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
+      {errorMessage && (
+        <div className="max-w-3xl mx-auto mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start justify-between gap-3">
+          <p>{errorMessage}</p>
+          <button
+            type="button"
+            className="text-red-700 font-semibold"
+            onClick={() => setErrorMessage("")}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Back */}
       <Link to="/" className="flex items-center mb-6 text-blue-600">
         <ArrowLeft className="w-4 h-4 mr-2" /> Back to Home
@@ -156,8 +184,9 @@ const ResumeAnalysis: React.FC = () => {
           </div>
         </div>
 
-        {mode === "ai" && (
-          <div className="mt-4">
+        <div className="mt-4">
+          {mode === "ai" && (
+            <>
             <label className="block text-sm font-medium text-gray-700 mb-1">Target role</label>
             <select
               value={jobRole}
@@ -167,17 +196,25 @@ const ResumeAnalysis: React.FC = () => {
               <option value="software_engineer">Software Engineer</option>
               <option value="data_scientist">Data Scientist</option>
             </select>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Job description</label>
-            <textarea
-              value={jobDescription}
-              onChange={(e) => setJobDescription(e.target.value)}
-              rows={6}
-              className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              placeholder="Paste the job description here (required for AI ATS scoring)"
-            />
-            {!token && <p className="mt-2 text-sm text-blue-700">Using public ATS endpoint (no login required).</p>}
-          </div>
-        )}
+            </>
+          )}
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Job description
+          </label>
+          <textarea
+            value={jobDescription}
+            onChange={(e) => setJobDescription(e.target.value)}
+            rows={6}
+            className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            placeholder="Paste the job description here (required for ATS scoring)"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Minimum 30 characters ({jobDescription.trim().length}/30)
+          </p>
+          {mode === "ai" && !token && (
+            <p className="mt-2 text-sm text-blue-700">Using public ATS endpoint (no login required).</p>
+          )}
+        </div>
       </div>
 
       {/* Upload box */}
@@ -240,6 +277,9 @@ const ResumeAnalysis: React.FC = () => {
           {/* Score */}
           <div className="bg-white p-6 rounded-xl shadow text-center">
             <h2 className="text-xl font-bold mb-2">ATS Score</h2>
+            <p className="text-xs text-gray-500 mb-2">
+              Mode: {mode === "ai" ? "Backend ATS (dataset)" : "Local heuristic"}
+            </p>
             <p className={`text-5xl font-bold ${getColor(result.score)}`}>
               {result.score}
             </p>

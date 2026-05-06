@@ -5,6 +5,9 @@ export interface ATSAnalysisResult {
   strengths: string[];
   improvements: string[];
   keywords: string[];
+  jdMatchScore: number;
+  jdMatchedKeywords: string[];
+  jdMissingKeywords: string[];
   detailedBreakdown: {
     contactInfo: { score: number; maxScore: number; feedback: string };
     summary: { score: number; maxScore: number; feedback: string };
@@ -39,10 +42,12 @@ const ATS_HEADERS = [
 export class ATSAnalyzer {
   private text: string = '';
   private words: string[] = [];
+  private jdText: string = '';
 
-  constructor(resumeText: string) {
+  constructor(resumeText: string, jobDescription: string = '') {
     this.text = resumeText.toLowerCase();
     this.words = this.text.split(/\s+/);
+    this.jdText = jobDescription.toLowerCase();
   }
 
   analyze(): ATSAnalysisResult {
@@ -63,13 +68,38 @@ export class ATSAnalyzer {
                     education.maxScore + skills.maxScore + formatting.maxScore + 
                     keywords.maxScore + length.maxScore;
 
-    const finalScore = Math.round((totalScore / maxScore) * 100);
+    const baseScore = Math.round((totalScore / maxScore) * 100);
+    const jdAnalysis = this.analyzeJobDescriptionAlignment();
+    const finalScore = this.jdText
+      ? Math.round(baseScore * 0.55 + jdAnalysis.score * 0.45)
+      : baseScore;
+    const cappedScore = Math.max(0, Math.min(100, finalScore));
+    const baseStrengths = this.generateStrengths(contactInfo, summary, experience, education, skills, formatting, keywords, length);
+    const baseImprovements = this.generateImprovements(contactInfo, summary, experience, education, skills, formatting, keywords, length);
+    const strengths = [...baseStrengths];
+    const improvements = [...baseImprovements];
+
+    if (this.jdText) {
+      strengths.push(`JD alignment score: ${jdAnalysis.score}%`);
+      if (jdAnalysis.matchedKeywords.length) {
+        strengths.push(`Matched JD keywords: ${jdAnalysis.matchedKeywords.slice(0, 8).join(', ')}`);
+      }
+      if (jdAnalysis.missingKeywords.length) {
+        improvements.push(`Add JD keywords: ${jdAnalysis.missingKeywords.slice(0, 10).join(', ')}`);
+      }
+      if (jdAnalysis.score < 50) {
+        improvements.push('Resume is weakly aligned to the target job description. Tailor skills and projects to JD requirements.');
+      }
+    }
 
     return {
-      score: finalScore,
-      strengths: this.generateStrengths(contactInfo, summary, experience, education, skills, formatting, keywords, length),
-      improvements: this.generateImprovements(contactInfo, summary, experience, education, skills, formatting, keywords, length),
-      keywords: this.suggestKeywords(),
+      score: cappedScore,
+      strengths,
+      improvements,
+      keywords: this.suggestKeywords(jdAnalysis.missingKeywords),
+      jdMatchScore: jdAnalysis.score,
+      jdMatchedKeywords: jdAnalysis.matchedKeywords,
+      jdMissingKeywords: jdAnalysis.missingKeywords,
       detailedBreakdown: {
         contactInfo,
         summary,
@@ -438,14 +468,49 @@ export class ATSAnalyzer {
     return improvements.length > 0 ? improvements : ['Continue building on your strengths'];
   }
 
-  private suggestKeywords(): string[] {
+  private suggestKeywords(priority: string[] = []): string[] {
     const allKeywords = Object.values(INDUSTRY_KEYWORDS).reduce<string[]>(
       (acc, arr) => acc.concat(arr),
       [],
     );
     const missingKeywords = allKeywords.filter(keyword => !this.text.includes(keyword));
-    
-    // Return 5 random missing keywords
-    return missingKeywords.sort(() => 0.5 - Math.random()).slice(0, 5);
+
+    const priorityKeywords = priority.filter((kw) => !this.text.includes(kw.toLowerCase()));
+    const merged = [...priorityKeywords, ...missingKeywords.filter((kw) => !priorityKeywords.includes(kw))];
+    return merged.slice(0, 8);
+  }
+
+  private analyzeJobDescriptionAlignment(): {
+    score: number;
+    matchedKeywords: string[];
+    missingKeywords: string[];
+  } {
+    if (!this.jdText.trim()) {
+      return { score: 0, matchedKeywords: [], missingKeywords: [] };
+    }
+
+    const stopWords = new Set([
+      'the', 'and', 'with', 'for', 'you', 'your', 'our', 'are', 'from', 'that', 'this', 'will',
+      'have', 'has', 'into', 'using', 'use', 'about', 'role', 'team', 'work', 'years', 'year',
+      'experience', 'required', 'preferred', 'ability', 'skills', 'skill', 'job', 'candidate',
+      'strong', 'good', 'must', 'should', 'can', 'etc',
+    ]);
+
+    const jdTokens = this.jdText.match(/[a-zA-Z][a-zA-Z0-9.+#-]*/g) || [];
+    const jdKeywords = Array.from(
+      new Set(
+        jdTokens
+          .map((token) => token.toLowerCase())
+          .filter((token) => token.length >= 3 && !stopWords.has(token))
+      )
+    ).slice(0, 30);
+
+    const matchedKeywords = jdKeywords.filter((keyword) => this.text.includes(keyword));
+    const missingKeywords = jdKeywords.filter((keyword) => !this.text.includes(keyword));
+    const score = jdKeywords.length
+      ? Math.round((matchedKeywords.length / jdKeywords.length) * 100)
+      : 0;
+
+    return { score, matchedKeywords, missingKeywords };
   }
 }
