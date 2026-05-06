@@ -39,10 +39,11 @@ export async function extractResumeText(file: File): Promise<string> {
 
     // Prefer legacy build for broader browser/runtime compatibility.
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const workerMod = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url');
+    pdfjs.GlobalWorkerOptions.workerSrc = workerMod.default;
 
     const data = new Uint8Array(await file.arrayBuffer());
-    // Disable worker to avoid runtime incompatibilities in some browsers/dev setups.
-    const doc = await pdfjs.getDocument({ data, disableWorker: true } as any).promise;
+    const doc = await pdfjs.getDocument({ data }).promise;
     const parts: string[] = [];
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
