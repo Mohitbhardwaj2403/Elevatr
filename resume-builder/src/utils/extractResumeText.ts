@@ -26,18 +26,18 @@ function ensureRuntimeCompat() {
     };
   }
 }
-
 export async function extractResumeText(file: File): Promise<string> {
   const lower = file.name.toLowerCase();
 
+  // TXT
   if (lower.endsWith(".txt")) {
     return (await file.text()).trim();
   }
 
+  // PDF
   if (lower.endsWith(".pdf")) {
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // IMPORTANT
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
       "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
       import.meta.url
@@ -49,16 +49,19 @@ export async function extractResumeText(file: File): Promise<string> {
 
     let text = "";
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
 
       const content = await page.getTextContent();
 
-      const pageText = content.items
-        .map((item: any) => item.str || "")
-        .join(" ");
+      // SAFER LOOP
+      for (const item of content.items as any[]) {
+        if (item?.str) {
+          text += item.str + " ";
+        }
+      }
 
-      text += pageText + "\n";
+      text += "\n";
     }
 
     return text.replace(/\s+/g, " ").trim();
