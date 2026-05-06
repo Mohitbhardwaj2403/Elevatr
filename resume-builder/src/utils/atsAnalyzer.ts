@@ -342,7 +342,10 @@ export class ATSAnalyzer {
     let feedback = '';
 
     // Count industry keywords
-    const allKeywords = Object.values(INDUSTRY_KEYWORDS).flat();
+    const allKeywords = Object.values(INDUSTRY_KEYWORDS).reduce<string[]>(
+      (acc, arr) => acc.concat(arr),
+      [],
+    );
     const foundKeywords = allKeywords.filter(keyword => this.text.includes(keyword));
     
     if (foundKeywords.length >= 10) {
@@ -436,7 +439,10 @@ export class ATSAnalyzer {
   }
 
   private suggestKeywords(): string[] {
-    const allKeywords = Object.values(INDUSTRY_KEYWORDS).flat();
+    const allKeywords = Object.values(INDUSTRY_KEYWORDS).reduce<string[]>(
+      (acc, arr) => acc.concat(arr),
+      [],
+    );
     const missingKeywords = allKeywords.filter(keyword => !this.text.includes(keyword));
     
     // Return 5 random missing keywords
