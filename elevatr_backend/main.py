@@ -49,16 +49,16 @@ app = FastAPI(
 )
 
 # ─────────────────────────── middleware ─────────────────────────
-cors_origins = parse_cors_origins(getattr(settings, "CORS_ORIGINS", None))
+#cors_origins = parse_cors_origins(getattr(settings, "CORS_ORIGINS", None))
 
 print("CORS ORIGINS:", cors_origins)
 
-if not cors_origins:
-    cors_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://elevatr-jet.vercel.app",
-    ]
+#if not cors_origins:
+#    cors_origins = [
+  #      "http://localhost:5173",
+   #     "http://127.0.0.1:5173",
+    #    "https://elevatr-jet.vercel.app",
+    #]
 
 if "*" in cors_origins:
     logger.warning("CORS_ORIGINS contains '*' while credentials are enabled; removing wildcard.")
@@ -66,7 +66,11 @@ if "*" in cors_origins:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://elevatr-jet.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
