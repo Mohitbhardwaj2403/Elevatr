@@ -61,7 +61,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-cors_origins = parse_cors_origins(getattr(settings, "CORS_ORIGINS", None))
+#cors_origins = parse_cors_origins(getattr(settings, "CORS_ORIGINS", None))
 
 #print("CORS ORIGINS:", cors_origins)
 
