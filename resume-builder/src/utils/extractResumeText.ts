@@ -3,69 +3,35 @@
  * Replaces the old Express + multer flow (no server-side parsing).
  */
 
-function ensureRuntimeCompat() {
-  type PromiseWithResolvers = <T>() => {
-    promise: Promise<T>;
-    resolve: (value: T | PromiseLike<T>) => void;
-    reject: (reason?: unknown) => void;
-  };
-  const PromiseCompat = Promise as PromiseConstructor & {
-    withResolvers?: PromiseWithResolvers;
-  };
-
-  // pdfjs can rely on Promise.withResolvers in some builds/runtimes.
-  if (typeof PromiseCompat.withResolvers !== "function") {
-    PromiseCompat.withResolvers = function withResolversPolyfill<T>() {
-      let resolve!: (value: T | PromiseLike<T>) => void;
-      let reject!: (reason?: unknown) => void;
-      const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
-      });
-      return { promise, resolve, reject };
-    };
-  }
-}
 export async function extractResumeText(file: File): Promise<string> {
   const lower = file.name.toLowerCase();
 
-  // TXT
-  if (lower.endsWith(".txt")) {
+  if (lower.endsWith('.txt')) {
     return (await file.text()).trim();
   }
 
-  // PDF
-  if (lower.endsWith(".pdf")) {
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-      import.meta.url
-    ).toString();
+  if (lower.endsWith('.pdf')) {
+    const pdfjs = await import('pdfjs-dist');
+    const workerMod = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+    pdfjs.GlobalWorkerOptions.workerSrc = workerMod.default;
 
     const data = new Uint8Array(await file.arrayBuffer());
-
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-
-    let text = "";
-
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-
+    const doc = await pdfjs.getDocument({ data }).promise;
+    const parts: string[] = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
       const content = await page.getTextContent();
-
-      // SAFER LOOP
-      for (const item of content.items as any[]) {
-        if (item?.str) {
-          text += item.str + " ";
+      for (const item of content.items) {
+        if (item && typeof item === 'object' && 'str' in item && typeof (item as { str: string }).str === 'string') {
+          parts.push((item as { str: string }).str);
         }
       }
-
-      text += "\n";
+      parts.push('\n');
     }
-
-    return text.replace(/\s+/g, " ").trim();
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
   }
 
-  throw new Error("Only PDF and TXT files are supported.");
+  throw new Error(
+    'Please upload a PDF or .txt file. Word (.doc/.docx) is not supported here—export to PDF or paste text into a .txt file.',
+  );
 }
